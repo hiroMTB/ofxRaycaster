@@ -36,8 +36,24 @@ const glm::vec3 ofxraycaster::Ray::getDirection() {
     return direction;
 }
 
+const ofVboMesh & ofxraycaster::Ray::getTrack(){
+    return track;
+}
+
 void ofxraycaster::Ray::setDirection(glm::vec3 _direction){
     direction = _direction;
+}
+
+void ofxraycaster::Ray::setMaxLength(float _maxLength){
+    maxLength = _maxLength;
+}
+
+void ofxraycaster::Ray::setMaxReflectionNum(unsigned int _maxReflectionNum){
+    maxReflectionNum = _maxReflectionNum;
+}
+
+void ofxraycaster::Ray::setMinReflectionDistance(float _minReflectionDistance){
+    minReflectionDistance = _minReflectionDistance;
 }
 
 void ofxraycaster::Ray::draw(float radius){
@@ -68,6 +84,105 @@ bool ofxraycaster::Ray::intersectsTriangle(glm::vec3 const & vert0, glm::vec3 co
 bool ofxraycaster::Ray::intersectsSphere(const glm::vec3 & _center, const float & _radius, glm::vec3& _position, glm::vec3 & _normal){
 
     return glm::intersectRaySphere(origin, direction, _center, _radius, _position, _normal);
+}
+
+bool ofxraycaster::Ray::intersectsPrimitiveMultiCast(const of3dPrimitive& primitive){
+
+    track.setMode(OF_PRIMITIVE_LINE_STRIP);
+    track.clear();
+    
+    glm::vec3 ori = origin;
+    glm::vec3 dir = direction;
+    
+    float rayLength = 0;
+    
+    vector<glm::vec3> & vs = track.getVertices();
+    vs.emplace_back(ori);
+    
+    while(1){
+        
+//        cout << endl;
+//        cout << "Ray       " << vs.size() << endl;
+//        cout << "origin    " << ori << endl;
+//        cout << "direction " << dir << endl;
+        
+        // at the beginning, no intersection is found and the distance to the closest surface
+        // is set to an high value;
+        bool found = false;
+        glm::vec3 baricentricCoords;
+        glm::vec3 intNormal;
+        float distanceToTheClosestSurface = numeric_limits<float>::max();
+        for (const ofMeshFace& face : primitive.getMesh().getUniqueFaces()) {
+            bool intersection = glm::intersectRayTriangle(
+                                                          ori, dir,
+                                                          glm::vec3(primitive.getGlobalTransformMatrix() * glm::vec4(face.getVertex(0), 1.f)),
+                                                          glm::vec3(primitive.getGlobalTransformMatrix() * glm::vec4(face.getVertex(1), 1.f)),
+                                                          glm::vec3(primitive.getGlobalTransformMatrix() * glm::vec4(face.getVertex(2), 1.f)),
+                                                          baricentricCoords);
+            // when an intersection is found, it updates the distanceToTheClosestSurface value
+            // this value is used to order the new intersections, if a new intersection with a smaller baricenter.z
+            // value is found, this one will become the new intersection
+            if (intersection) {
+                if (baricentricCoords.z < distanceToTheClosestSurface) {
+                    
+                    // check if resulted position is not the same one
+                    if(baricentricCoords.z > minReflectionDistance){
+                        found = true;
+                        distanceToTheClosestSurface = baricentricCoords.z;
+                        
+                        intNormal = glm::normalize(
+                                                   glm::vec3(primitive.getGlobalTransformMatrix() *
+                                                             glm::vec4(face.getFaceNormal(), 1.0f))
+                                                   );
+                    }
+                }
+            }
+        }
+        baricentricCoords.z = distanceToTheClosestSurface;
+        
+        if(found){
+            float d = baricentricCoords.z;  // distance from origin <-> hit point
+            
+            // 1. check ray distance
+            if(maxLength <= rayLength + d){
+                d = maxLength - rayLength;
+                glm::vec3 hitPos = ori + dir * d;
+                vs.emplace_back( hitPos );
+                // layLength = maxLength
+                break;
+            }else{
+                glm::vec3 hitPos = ori + dir * d;
+                vs.emplace_back( hitPos );
+                rayLength += d;
+                
+                // 2. check how many times does this ray be reflected
+                if(vs.size() > maxReflectionNum){
+                    break;
+                }else{
+                    // we keep casting ray, so update origin and direction
+                    ori = hitPos;
+                    // reflect
+                    glm::vec3 ref = glm::reflect(dir, intNormal);
+                    dir = normalize(ref);
+                }
+            }
+        }else{
+            
+            if(vs.size() == 1){
+                // nothing to hit
+                break;
+            }else{
+                // hit several times already
+                // lets extend a ray until max length
+                float d = maxLength - rayLength;
+                glm::vec3 endPos = ori + dir * d;
+                vs.emplace_back( endPos );
+                break;
+            }
+        }
+    }
+    
+    return (vs.size() > 1);
 }
 
 bool ofxraycaster::Ray::intersectsPrimitive(const of3dPrimitive& primitive,  glm::vec3 & baricentricCoords, glm::vec3 & intNormal) {

@@ -36,9 +36,26 @@ namespace ofxraycaster {
         bool intersectsPrimitive(const of3dPrimitive& primitive,  glm::vec3 & baricentricCoords, glm::vec3 & intNormal);
         bool intersectsMesh(const ofMesh& mesh,  glm::vec3 & baricentricCoords, glm::vec3 & intNormal);
         bool intersectsMesh(const ofMesh& mesh, const glm::mat4& transformationMatrix,  glm::vec3 & baricentricCoords, glm::vec3 & intNormal);
-
+        const ofVboMesh & getTrack();
+        
+        // multiple cast
+        bool intersectsPrimitiveMultiCast(const of3dPrimitive& primitive);
+        void setMaxLength(float _maxLength);
+        void setMaxReflectionNum(unsigned int _maxReflectionNum);
+        
+        ///
+        /// \brief adjust this number to reduce reflection error, for example 0.0000...1 ~ 1, depends on your 3D scene scale
+        /// @param [in] _minReflectionDistance
+        void setMinReflectionDistance(float _minReflectionDistance);
+        
     private:
         glm::vec3 origin;
         glm::vec3 direction;
+        
+        ofVboMesh track;
+        float maxLength{10000};
+        unsigned int maxReflectionNum{10};
+        float minReflectionDistance{0.01};
+
     };
 }
